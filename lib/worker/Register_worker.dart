@@ -1,12 +1,11 @@
 import 'dart:io'; // Required for File handling
 import 'dart:ui';
+import 'package:dio/dio.dart'; // Network
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
-// NOTE: To enable real camera/gallery functionality:
-// 1. Run in terminal: flutter pub add image_picker
-// 2. Uncomment the import below:
-// import 'package:image_picker/image_picker.dart';
+import 'package:image_picker/image_picker.dart'; // For Camera/Gallery
+import 'package:geolocator/geolocator.dart';
+import 'package:labourlink/login.dart'; // For Location
 
 void main() {
   runApp(
@@ -44,12 +43,18 @@ class _RegisterFormPageState extends State<RegisterFormPage1>
   final _ageController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
-  final _wageController = TextEditingController(); // <--- NEW CONTROLLER
+  final _uniqueIdController = TextEditingController();
+  final _wageController = TextEditingController();
   final _otherSkillController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  final ImagePicker _picker = ImagePicker(); // Image Picker Instance
+
+  // API Configuration
+  final dio = Dio();
+  final baseurl = "http://192.168.1.159:8000";
 
   // --- State Variables ---
   bool _isSubmitting = false;
@@ -60,22 +65,9 @@ class _RegisterFormPageState extends State<RegisterFormPage1>
   // Image Variable
   File? _selectedImage;
 
-  // --- Country Code Logic ---
-  String _selectedCountryCode = '+91';
-
-  final List<Map<String, String>> _countryData = [
-    {'code': '+91', 'flag': '🇮🇳'},
-    {'code': '+1', 'flag': '🇺🇸'},
-    {'code': '+44', 'flag': '🇬🇧'},
-    {'code': '+971', 'flag': '🇦🇪'},
-    {'code': '+966', 'flag': '🇸🇦'},
-    {'code': '+81', 'flag': '🇯🇵'},
-    {'code': '+86', 'flag': '🇨🇳'},
-    {'code': '+61', 'flag': '🇦🇺'},
-    {'code': '+49', 'flag': '🇩🇪'},
-    {'code': '+33', 'flag': '🇫🇷'},
-    {'code': '+7', 'flag': '🇷🇺'},
-  ];
+  // Location Variables
+  double? _latitude;
+  double? _longitude;
 
   // --- Skills Logic ---
   final List<String> _selectedSkills = [];
@@ -118,6 +110,8 @@ class _RegisterFormPageState extends State<RegisterFormPage1>
       duration: const Duration(milliseconds: 1500),
     );
     _controller.forward();
+    // Optional: Fetch location on load, or wait until submit
+    _determinePosition();
   }
 
   @override
@@ -127,7 +121,8 @@ class _RegisterFormPageState extends State<RegisterFormPage1>
     _ageController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
-    _wageController.dispose(); // <--- Dispose Wage Controller
+    _uniqueIdController.dispose();
+    _wageController.dispose();
     _otherSkillController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
@@ -135,13 +130,81 @@ class _RegisterFormPageState extends State<RegisterFormPage1>
     super.dispose();
   }
 
+  // --- Location Logic ---
+  Future<void> _determinePosition() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      debugPrint('Location services are disabled.');
+      return;
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        debugPrint('Location permissions are denied');
+        return;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      debugPrint('Location permissions are permanently denied');
+      return;
+    }
+
+    Position position = await Geolocator.getCurrentPosition();
+    setState(() {
+      _latitude = position.latitude;
+      _longitude = position.longitude;
+    });
+    debugPrint("Location: $_latitude, $_longitude");
+  }
+
   // --- Photo Picker Logic ---
   Future<void> _pickImage() async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Add 'image_picker' package to enable Camera/Gallery"),
-        duration: Duration(seconds: 2),
-      ),
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Wrap(
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Photo Library'),
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  final XFile? image = await _picker.pickImage(
+                    source: ImageSource.gallery,
+                  );
+                  if (image != null) {
+                    setState(() {
+                      _selectedImage = File(image.path);
+                    });
+                  }
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_camera),
+                title: const Text('Camera'),
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  final XFile? image = await _picker.pickImage(
+                    source: ImageSource.camera,
+                  );
+                  if (image != null) {
+                    setState(() {
+                      _selectedImage = File(image.path);
+                    });
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -208,26 +271,89 @@ class _RegisterFormPageState extends State<RegisterFormPage1>
       return;
     }
 
+    // Refresh location to be sure
+    if (_latitude == null || _longitude == null) {
+      await _determinePosition();
+    }
+
     setState(() => _isSubmitting = true);
 
-    // Simulate API Call
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      // 1. Process Skills
+      List<String> finalSkillsList = [];
+      for (String skill in _selectedSkills) {
+        if (skill == 'Other') {
+          // If 'Other' is selected, take text from input
+          if (_otherSkillController.text.trim().isNotEmpty) {
+            finalSkillsList.add(_otherSkillController.text.trim());
+          }
+        } else {
+          finalSkillsList.add(skill);
+        }
+      }
+      // Join skills as a comma-separated string for backend
+      String skillsString = finalSkillsList.join(', ');
 
-    print("Wage: ${_wageController.text} $_selectedWageUnit");
+      // 2. Prepare Form Data
+      FormData formData = FormData.fromMap({
+        'name': _nameController.text,
+        'email': _emailController.text,
+        'phone_number': _phoneController.text,
+        'dob': _dobController.text,
+        'age': _ageController.text,
+        'password': _passwordController.text,
+        'wage': _wageController.text,
+        'wage_unit': _selectedWageUnit, // Also sending unit
+        'skills': skillsString, // Sending processed skills
+        'uniqueid': _uniqueIdController.text,
+        'location': {'lat': _latitude ?? 0.0, 'lng': _longitude ?? 0.0},
+        'photo': await MultipartFile.fromFile(
+          _selectedImage!.path,
+          filename: _selectedImage!.path.split('/').last,
+        ),
+      });
 
-    setState(() => _isSubmitting = false);
+      // 4. Send Request
+      // NOTE: Uncomment logic when ready to test with real server
 
-    if (!mounted) return;
+      final response = await dio.post(
+        '$baseurl/api/worker/register',
+        data: formData,
+      );
 
-    Navigator.of(context).pushReplacement(
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            const FeedbackPage(),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(opacity: animation, child: child);
-        },
-      ),
-    );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => LoginPage()),
+        );
+      } else {
+        throw Exception('Failed to register');
+      }
+
+      // Simulation for UI testing
+      await Future.delayed(const Duration(seconds: 2));
+      print("Submitted Skills: $skillsString");
+      print("Location: $_latitude, $_longitude");
+
+      if (!mounted) return;
+
+      Navigator.of(context).pushReplacement(
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) =>
+              const FeedbackPage(),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(opacity: animation, child: child);
+          },
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
   }
 
   // --- Validators ---
@@ -262,7 +388,13 @@ class _RegisterFormPageState extends State<RegisterFormPage1>
 
   String? _validatePhone(String? value) {
     if (value == null || value.trim().isEmpty) return 'Enter phone number';
-    if (value.trim().length < 7) return 'Invalid number';
+    if (value.trim().length < 10) return 'Invalid number (min 10 digits)';
+    return null;
+  }
+
+  String? _validateUniqueId(String? value) {
+    if (value == null || value.trim().isEmpty) return 'Please enter ID number';
+    if (value.trim().length < 4) return 'ID is too short';
     return null;
   }
 
@@ -466,73 +598,27 @@ class _RegisterFormPageState extends State<RegisterFormPage1>
                     icon: Icons.phone_android_outlined,
                     inputType: TextInputType.phone,
                     validator: _validatePhone,
-                    prefixWidget: IntrinsicHeight(
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const SizedBox(width: 8),
-                          DropdownButtonHideUnderline(
-                            child: DropdownButton<String>(
-                              value: _selectedCountryCode,
-                              dropdownColor: Colors.white,
-                              style: const TextStyle(
-                                color: Colors.black87,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                              ),
-                              icon: const Icon(
-                                Icons.arrow_drop_down,
-                                color: Colors.grey,
-                              ),
-                              items: _countryData.map((
-                                Map<String, String> item,
-                              ) {
-                                return DropdownMenuItem<String>(
-                                  value: item['code'],
-                                  child: Row(
-                                    children: [
-                                      Text(
-                                        item['flag']!,
-                                        style: const TextStyle(fontSize: 20),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        item['code']!,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }).toList(),
-                              onChanged: (value) {
-                                setState(() {
-                                  _selectedCountryCode = value!;
-                                });
-                              },
-                            ),
-                          ),
-                          const VerticalDivider(
-                            color: Colors.grey,
-                            indent: 10,
-                            endIndent: 10,
-                            thickness: 1,
-                          ),
-                          const SizedBox(width: 0),
-                        ],
-                      ),
-                    ),
                   ),
                 ),
 
-                // Skills (Index 6)
-                _buildAnimatedItem(index: 6, child: _buildSkillSelector()),
-
-                // --- NEW WAGE SECTION (Index 7) ---
+                // --- NEW UNIQUE ID SECTION (Index 6) ---
                 _buildAnimatedItem(
-                  index: 7,
+                  index: 6,
+                  child: _buildModernTextField(
+                    controller: _uniqueIdController,
+                    label: 'Unique ID / Government ID',
+                    icon: Icons.fingerprint_rounded,
+                    inputType: TextInputType.text,
+                    validator: _validateUniqueId,
+                  ),
+                ),
+
+                // Skills (Index 7)
+                _buildAnimatedItem(index: 7, child: _buildSkillSelector()),
+
+                // Wage Section (Index 8)
+                _buildAnimatedItem(
+                  index: 8,
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -542,7 +628,7 @@ class _RegisterFormPageState extends State<RegisterFormPage1>
                         child: _buildModernTextField(
                           controller: _wageController,
                           label: 'Expected Wage',
-                          icon: Icons.currency_rupee, // Or Icons.attach_money
+                          icon: Icons.currency_rupee,
                           inputType: TextInputType.number,
                           validator: _validateWage,
                         ),
@@ -596,9 +682,9 @@ class _RegisterFormPageState extends State<RegisterFormPage1>
                   ),
                 ),
 
-                // Password (Index 8)
+                // Password (Index 9)
                 _buildAnimatedItem(
-                  index: 8,
+                  index: 9,
                   child: _buildModernTextField(
                     controller: _passwordController,
                     label: 'Password',
@@ -611,9 +697,9 @@ class _RegisterFormPageState extends State<RegisterFormPage1>
                   ),
                 ),
 
-                // Confirm Password (Index 9)
+                // Confirm Password (Index 10)
                 _buildAnimatedItem(
-                  index: 9,
+                  index: 10,
                   child: _buildModernTextField(
                     controller: _confirmPasswordController,
                     label: 'Confirm Password',
@@ -630,9 +716,9 @@ class _RegisterFormPageState extends State<RegisterFormPage1>
 
                 const SizedBox(height: 30),
 
-                // Submit Button (Index 10)
+                // Submit Button (Index 11)
                 _buildAnimatedItem(
-                  index: 10,
+                  index: 11,
                   child: SizedBox(
                     width: double.infinity,
                     height: 55,
@@ -670,9 +756,9 @@ class _RegisterFormPageState extends State<RegisterFormPage1>
 
                 const SizedBox(height: 16),
 
-                // Login Link (Index 11)
+                // Login Link (Index 12)
                 _buildAnimatedItem(
-                  index: 11,
+                  index: 12,
                   child: TextButton(
                     onPressed: () => Navigator.pop(context),
                     child: Text(

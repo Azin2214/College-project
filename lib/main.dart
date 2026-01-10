@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:labourlink/user/Register_user.dart';
+import 'package:labourlink/user/homepage.dart';
 import 'package:labourlink/user/search_worker.dart';
 import 'package:labourlink/user/worker_profile.dart';
 import 'package:labourlink/worker/Hiring.dart';
@@ -8,6 +9,7 @@ import 'package:labourlink/user/complaint_user.dart';
 import 'package:labourlink/user/feedback.dart';
 import 'package:labourlink/login.dart';
 import 'package:labourlink/user/work_details_user.dart';
+import 'package:labourlink/worker/homepage2.dart';
 
 void main() {
   runApp(const MyApp());
@@ -39,7 +41,7 @@ class MyApp extends StatelessWidget {
         // tested with just a hot reload.
         colorScheme: .fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: WorkerProfilePage(),
+      home: RegisterFormPage1(),
     );
   }
 }
