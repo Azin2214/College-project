@@ -379,9 +379,9 @@ class _ComplaintPageState extends State<ComplaintPage>
   Widget _buildPriorityChip(String label) {
     final isSelected = _selectedPriority == label;
     Color color;
-    if (label == "High")
+    if (label == "High") {
       color = Colors.red;
-    else if (label == "Medium")
+    } else if (label == "Medium")
       color = Colors.orange;
     else
       color = Colors.green;
@@ -448,7 +448,7 @@ class _ComplaintPageState extends State<ComplaintPage>
 
   Widget _buildModernDropdown() {
     return DropdownButtonFormField<String>(
-      value: _selectedCategory,
+      initialValue: _selectedCategory,
       icon: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.grey[600]),
       decoration: InputDecoration(
         labelText: "Issue Category",

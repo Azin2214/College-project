@@ -304,8 +304,9 @@ class _WorkDetailsUserState extends State<WorkDetailsUser>
                     hint: "e.g. Senior Carpenter",
                     icon: Icons.badge_outlined,
                     validator: (value) {
-                      if (value == null || value.isEmpty)
+                      if (value == null || value.isEmpty) {
                         return "Enter Job Title";
+                      }
                       if (value.trim().length < 3) return "Min 3 characters";
                       return null;
                     },
@@ -329,8 +330,9 @@ class _WorkDetailsUserState extends State<WorkDetailsUser>
                               controller: _startDateController,
                               label: "Start Date",
                               validator: (value) {
-                                if (value == null || value.isEmpty)
+                                if (value == null || value.isEmpty) {
                                   return 'Required';
+                                }
                                 if (_parseDate(value) == null) return 'Invalid';
                                 return null;
                               },
@@ -346,8 +348,9 @@ class _WorkDetailsUserState extends State<WorkDetailsUser>
                               controller: _endDateController,
                               label: "End Date",
                               validator: (value) {
-                                if (value == null || value.isEmpty)
+                                if (value == null || value.isEmpty) {
                                   return 'Required';
+                                }
                                 final start = _parseDate(
                                   _startDateController.text,
                                 );

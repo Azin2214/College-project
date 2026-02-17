@@ -1,7 +1,11 @@
 import 'dart:ui';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:labourlink/user/Register_user.dart'; // Ensure this import is correct
+import 'package:labourlink/user/Register_user.dart';
+import 'package:labourlink/user/homepage.dart';
+import 'package:labourlink/worker/Register_worker.dart';
+import 'package:labourlink/worker/homepage2.dart'; // Ensure this import is correct
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -45,34 +49,60 @@ class _LoginPageState extends State<LoginPage>
   }
 
   Future<void> _submit() async {
-    // Professional touch: Haptic feedback
-    HapticFeedback.lightImpact();
-    FocusScope.of(context).unfocus();
-
-    if (!_formKey.currentState!.validate()) {
-      HapticFeedback.heavyImpact(); // Error feedback
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isSubmitting = true);
 
-    // Simulate network delay
-    await Future.delayed(const Duration(seconds: 2));
-
-    setState(() => _isSubmitting = false);
-
-    if (!mounted) return;
-
-    // Use a nice fade transition for navigation
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            const RegisterFormPage(),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(opacity: animation, child: child);
+    try {
+      final res = await dio.post(
+        '$baseurl/api/auth/login',
+        data: {
+          'username': _usernameController.text.trim(),
+          'password': _passwordController.text.trim(),
         },
-      ),
-    );
+      );
+
+      print(res.data);
+
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        final role = res.data['verify']['role'];
+        final status = res.data['verify']['verify'];
+
+        if (!mounted) return;
+
+        if (role == "User" && status == true) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => CustomerHomePage()),
+          );
+        } else if (role == "Worker" && status == true) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => WorkerHomePage()),
+          );
+        } else {
+          _showError("Invalid account");
+        }
+      } else {
+        _showError("Login failed");
+      }
+    } on DioException catch (e) {
+      print(e.response?.data);
+      _showError(e.response?.data['message'] ?? "Invalid username or password");
+    } catch (e) {
+      print(e);
+      _showError("Server error");
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
+  }
+
+  void _showError(String msg) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
   }
 
   @override
@@ -274,6 +304,33 @@ class _LoginPageState extends State<LoginPage>
                                 MaterialPageRoute(
                                   builder: (context) =>
                                       const RegisterFormPage(),
+                                ),
+                              );
+                            },
+                            child: Text(
+                              'Register',
+                              style: TextStyle(
+                                color: _primaryColor,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            "Register as worker? ",
+                            style: TextStyle(color: Colors.grey[600]),
+                          ),
+                          GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      const RegisterFormPage1(),
                                 ),
                               );
                             },
